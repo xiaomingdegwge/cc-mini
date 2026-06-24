@@ -10,7 +10,7 @@ from context import build_system_prompt
 from engine import AbortedError, Engine
 from permissions import PermissionChecker
 from session import SessionStore
-from tools import BashTool, GlobTool, GrepTool, ReadTool
+from tools import BashTool, EditTool, GlobTool, GrepTool, ReadTool, WriteTool
 
 try:
     from rich.console import Console  # type: ignore[import-not-found]
@@ -81,6 +81,8 @@ def run_query(
 ) -> None:
     """Run one turn; interactive mode uses ESC cancel + spinner when enabled."""
 
+    # MAMBA3: UI/event bridge. run_query consumes Engine.submit() events
+    # and turns them into terminal output, spinners, and tool status lines.
     plain = print_mode or not use_rich or not _HAS_RICH
     console = Console(highlight=False) if _HAS_RICH else None
 
@@ -265,11 +267,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    # MAMBA1: CLI bootstrap. Parse config, register tools, create permission,
+    # session, system prompt, and Engine. This is the whole app wiring point.
     args = build_parser().parse_args()
     cfg = load_app_config(args)
 
     cwd = str(Path.cwd())
-    tools = [ReadTool(), GlobTool(), GrepTool(), BashTool()]
+    tools = [ReadTool(), EditTool(), WriteTool(), GlobTool(), GrepTool(), BashTool()]
     permissions = PermissionChecker(auto_approve=cfg.auto_approve)
     session_store = SessionStore(
         cwd=cwd,
@@ -318,7 +322,7 @@ def main() -> None:
                 print(f"[resume] loaded session {target.session_id} ({len(messages)} messages)")
 
     use_rich = not args.plain
-
+    # MAMBA2: Run query in print mode once
     if args.print or args.prompt:
         run_query(
             engine,
@@ -337,6 +341,8 @@ def main() -> None:
     print("Esc cancels turn (TTY). Commands: /sessions /clear . Type 'exit' to quit.")
 
     while True:
+        # MAMBA2: REPL entry. Each normal user input flows into run_query(),
+        # then Engine.submit() drives the agent/tool loop.
         try:
             user_input = input("\n> ").strip()
         except EOFError:

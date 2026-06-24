@@ -147,6 +147,8 @@ class LLMClient:
         tools: list[dict[str, Any]] | None = None,
         effort: str | None = None,
     ):
+        # MAMBA5A: Provider adapter. Engine calls this once per model step;
+        # this method hides Anthropic/OpenAI/mock streaming differences.
         if self.provider == _OPENAI_PROVIDER:
             return _OpenAIStream(
                 client=self._client,
@@ -428,6 +430,30 @@ class _MockClient:
                     content=[self._tool_use("Grep", {"pattern": pattern.strip(), "file_path": file_path.strip()})]
                 )
             return LLMMessage(content=[{"type": "text", "text": "格式应为: /tool grep <pattern> :: <path>"}])
+        if text.startswith("/tool edit "):
+            payload = text[len("/tool edit "):]
+            parts = [part.strip() for part in payload.split("::", 2)]
+            if len(parts) == 3:
+                file_path, old_string, new_string = parts
+                return LLMMessage(
+                    content=[self._tool_use("Edit", {
+                        "file_path": file_path,
+                        "old_string": old_string,
+                        "new_string": new_string,
+                    })]
+                )
+            return LLMMessage(content=[{"type": "text", "text": "格式应为: /tool edit <path> :: <old> :: <new>"}])
+        if text.startswith("/tool write "):
+            payload = text[len("/tool write "):]
+            if "::" in payload:
+                file_path, content = payload.split("::", 1)
+                return LLMMessage(
+                    content=[self._tool_use("Write", {
+                        "file_path": file_path.strip(),
+                        "content": content.lstrip(),
+                    })]
+                )
+            return LLMMessage(content=[{"type": "text", "text": "格式应为: /tool write <path> :: <content>"}])
         if text.startswith("/tool bash "):
             command = text[len("/tool bash "):].strip()
             return LLMMessage(content=[self._tool_use("Bash", {"command": command})])

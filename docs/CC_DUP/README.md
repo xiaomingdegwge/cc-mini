@@ -4,8 +4,8 @@ This folder contains a minimal, runnable clone of the core loop used in `cc-mini
 
 - REPL input loop
 - Engine turn loop (`assistant -> tool_use -> tool_result -> assistant`)
-- Tool abstraction (`Read`, `Grep`, `Bash`)
-- Permission checks
+- Tool abstraction (`Read`, `Edit`, `Write`, `Glob`, `Grep`, `Bash`)
+- Permission checks (read-only tools auto-allow; `Edit`, `Write`, and `Bash` ask)
 - Session persistence (JSONL)
 - Real provider support (`anthropic` / `openai`) + mock fallback
 - API key fallback loading from environment and `~/.bashrc`
@@ -108,6 +108,8 @@ In `--provider mock`, the model uses simple prefixes in user input:
 
 - `/tool read <path>`
 - `/tool grep <pattern> :: <path>`
+- `/tool edit <path> :: <old> :: <new>`
+- `/tool write <path> :: <content>`
 - `/tool bash <command>`
 
 Example:

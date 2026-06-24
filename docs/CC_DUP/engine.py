@@ -81,6 +81,8 @@ class Engine:
             self._turn_start_len = None
 
     def submit(self, user_input: str | list) -> Iterator[tuple]:
+        # MAMBA4: Turn start. Add the user's message to conversation state
+        # and persist it before asking the model what to do next.
         self._aborted = False
         self._turn_start_len = len(self._messages)
         self._messages.append({"role": "user", "content": user_input})
@@ -95,6 +97,8 @@ class Engine:
                 final = None
                 for attempt in range(_MAX_RETRIES): # 第2波新增功能，异常重试，回退message，重新请求
                     try:
+                        # MAMBA5: Model request. Send system prompt, tools schema,
+                        # and all messages; stream text first, then inspect final blocks.
                         with self._client.stream_messages(
                             model=self._model,
                             max_tokens=self._max_tokens,
@@ -111,7 +115,7 @@ class Engine:
                                 got_text = True
                                 yield ("text", text) # 模型返回的文本，事件("text", text_chunk)
                             if got_text:
-                                yield ("waiting",) # 带 yield 的函数：跑到 yield 就暂停，把值交出去；下次再从暂停点继续。
+                                yield ("waiting",) # 带 yield 的函数：跑到 yield 就暂停，把值交出去，UI显示进度；下次再从暂停点继续。
 
                             final = stream.get_final_message()
                             usage = getattr(final, "usage", None)
@@ -148,6 +152,8 @@ class Engine:
                 if final is None:
                     self._messages.pop()
                     return
+                # MAMBA6: Assistant message normalization. Preserve both text
+                # and tool_use blocks so the next API call has exact history.
                 assistant_content = []
                 for block in final.content:
                     if _block_type(block) == "text":
@@ -167,6 +173,8 @@ class Engine:
                 if not tool_uses:
                     break
                # 第2波新增功能，并发处理可读工具
+                # MAMBA7: Tool planning. Split model tool_use blocks into safe
+                # batches: adjacent read-only tools may run together; writes run in order.
                 tool_results = []
                 batches: list[tuple[bool, list[Any]]] = []
                 for tu in tool_uses:
@@ -245,6 +253,8 @@ class Engine:
                                 result = ToolResult(content="Permission denied.", is_error=True)
                             else:
                                 yield ("tool_executing", name, inputs, activity)
+                                # MAMBA8: Tool execution. This is where Read/Edit/
+                                # Write/Glob/Grep/Bash finally call their execute().
                                 result = self._execute_tool(name, inputs)
 
                             yield ("tool_result", name, inputs, result)
@@ -258,7 +268,9 @@ class Engine:
                             )
 
                 self._messages.append({"role": "user", "content": tool_results})
-                self._persist(self._messages[-1])
+                self._persist(self._messages[-1]) # 持久化消息
+                # MAMBA9: Tool result feedback. Tool results are appended as a
+                # user message, then the while loop jumps back to MAMBA5.
         except AbortedError:
             self.cancel_turn()
             raise
