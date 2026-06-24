@@ -5,6 +5,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from commands import CommandContext, handle_command, parse_command
 from config import load_app_config
 from context import build_system_prompt
 from engine import AbortedError, Engine
@@ -338,7 +339,7 @@ def main() -> None:
         "cc-dup-mini started | "
         f"provider={cfg.provider} | model={cfg.model} | session={session_store.session_id}"
     )
-    print("Esc cancels turn (TTY). Commands: /sessions /clear . Type 'exit' to quit.")
+    print("Esc cancels turn (TTY). Commands: /help /sessions /resume /clear . Type 'exit' to quit.")
 
     while True:
         # MAMBA2: REPL entry. Each normal user input flows into run_query(),
@@ -355,23 +356,23 @@ def main() -> None:
         if not user_input:
             continue
 
-        if user_input == "/sessions":
-            sessions = SessionStore.list_sessions(cfg.session_dir)
-            if not sessions:
-                print("[sessions] none")
-                continue
-            for idx, session in enumerate(sessions, start=1):
-                print(f"{idx}. {session.session_id} ({session.model})")
-            continue
-
-        if user_input == "/clear":
-            engine.set_messages([])
-            print("[clear] conversation reset in memory (session file unchanged)")
-            continue
-
         if user_input.lower() in {"exit", "quit"}:
             print("Goodbye.")
             break
+
+        command = parse_command(user_input)
+        if command is not None:
+            command_ctx = CommandContext(
+                engine=engine,
+                session_store=session_store,
+                session_dir=cfg.session_dir,
+                cwd=cwd,
+                model=cfg.model,
+            )
+            result = handle_command(command[0], command[1], command_ctx)
+            if result.session_store is not None:
+                session_store = result.session_store
+            continue
 
         run_query(
             engine,
